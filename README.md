@@ -1,271 +1,330 @@
-# OTTOMAT3D Master Beta Script
+# OTTOMAT3D Master Automation Application
 
-**Portfolio Demonstration Notice**: This repository showcases a production automation script I developed independently for Ottomat3D's beta testing program. I designed and implemented the entire system from scratch - architecture, integrations, build pipeline, and distribution. The code is provided for technical review and portfolio demonstration purposes. See [LICENSE](LICENSE) for terms.
+**Independent Development**: I designed and built this entire automation application from the ground up over a 2-month period for Ottomat3D's beta testing program. Every component - architecture, API integrations, build pipeline, and distribution system - was developed independently.
 
-## Project Overview
+![Main Menu](docs/screenshots/main_menu.png)
 
-OTTOMAT3D is a cross-platform automation script that orchestrates 3D printer control across 6 different printer brands, coordinating with proprietary robotic ejection hardware. I developed this system over a 2-month period (July-September 2025) to create a self-contained, portable automation solution that beta testers could download and run without any installation or configuration hassles.
+## What This Is
 
-The core challenge was creating a unified interface for printers that all use completely different APIs and communication protocols, while ensuring the entire system could be distributed as a self-contained package that works out of the box on both Windows and macOS.
+OTTOMAT3D is a cross-platform automation application that orchestrates 3D printer control across 6 different manufacturer APIs, coordinating with robotic ejection hardware to enable fully automated multi-job print workflows. This represents 88+ development conversations and approximately 300+ hours of work spanning July through September 2025.
 
-## Technical Challenges Solved
-
-### Multi-Brand Printer Integration
-
-The script integrates with 6 different printer manufacturers, each with their own API architecture:
-
-- **Bambu Lab (A1, P1P, P1S, X1C)**: MQTT protocol with X.509 certificate authentication and real-time status streaming
-- **Prusa (MK3/MK4, Core One)**: REST API with bearer token authentication via PrusaLink
-- **FlashForge (AD5X, 5M Pro)**: Dual HTTP + raw TCP socket connection with custom protocol
-- **Creality (K1, K1C)**: WebSocket with custom firmware requirement (requires root access)
-- **Elegoo (Centauri Carbon)**: WebSocket with Rinkhals custom firmware
-- **Anycubic (Kobra S1)**: Moonraker REST API with Rinkhals custom firmware
-
-Each printer required custom connection logic, authentication handling, and status monitoring. The solution uses a Factory pattern with polymorphic printer classes that implement a common interface (`connect()`, `start_print()`, `monitor_status()`, `disconnect()`).
-
-### Self-Contained Distribution
-
-Beta testers have varied environments - different Python versions, missing dependencies, corporate firewalls blocking pip. The solution was to bundle everything:
-
-```
-src/_internal/
-├── python-3.13-mac/        # Complete Python 3.13 runtime for macOS
-└── python-3.13-windows/    # Complete Python 3.13 runtime for Windows
-```
-
-The script ships with its own Python interpreter and all dependencies pre-installed. Users extract the ZIP and run - no pip, no virtualenv, no system Python required. Total package size is ~200MB but it eliminates all installation friction.
-
-### macOS Security and Code Signing
-
-Initial approach used a shell script wrapper, but macOS Gatekeeper kept blocking Python files as "unidentified developer". Having beta testers manually bypass security warnings for multiple files was unprofessional and confusing.
-
-Solution was to use PyInstaller to create a proper .app bundle, then implement an automated signing and notarization pipeline:
-
-1. Build .app with PyInstaller
-2. Sign with Developer ID certificate
-3. Create DMG package
-4. Submit to Apple for notarization
-5. Staple notarization ticket to .app
-
-The build_and_sign.sh script automates this entire workflow. The result is a properly signed macOS app that installs without any security warnings.
-
-### Dynamic G-code Modification
-
-Elegoo and Anycubic printers have a problem: their print beds need to be raised after printing (for the ejection robot to access them), but G-code files are pre-sliced with fixed coordinates. These printers also have Z-height limits that make it impossible to add the movement in the slicer.
-
-The solution downloads the G-code file before each print and injects movement commands:
-
-```python
-# Download G-code from printer
-gcode_content = self.download_gcode(filename)
-
-# Find print completion marker
-lines = gcode_content.split('\n')
-end_index = self._find_print_end(lines)
-
-# Inject bed movement
-lines.insert(end_index, "G1 Z205 F600 ; Raise bed for ejection")
-
-# Re-upload modified G-code
-self.upload_gcode(filename, '\n'.join(lines))
-```
-
-For Anycubic printers specifically, we also had to inject the full LeviQ leveling sequence before each print to ensure proper bed calibration.
-
-### Multi-Material Printing (AMS Support)
-
-Bambu Lab printers support multi-material printing via their Automatic Material System (AMS). Multi-color .3mf files wouldn't start printing until I figured out how AMS configuration works.
-
-Initial assumption was that we needed to map exact colors and material types for each filament slot. Spent a week trying to implement color pickers and material selection UIs.
-
-The breakthrough: the printer completely ignores the colors and materials sent via the API mapping table. It uses whatever filaments are physically loaded in the AMS. The mapping is just a formality to enable multi-material mode.
-
-This simplified the UX from 20+ user inputs down to a single yes/no question: "Does this print job use AMS?" The script sends placeholder values and the printer handles the rest.
-
-FlashForge printers with Material Stations work the same way - empty material mappings work perfectly because the printer auto-maps based on tool change commands in the G-code.
-
-### Custom Bambulabs API Package Fix
-
-During beta testing, we discovered Bambu Lab printers' connection test was failing. The issue was in the bambulabs_api Python package itself - a bug in how it handled connection validation.
-
-The challenge: our build script downloads the bambulabs_api package fresh from PyPI when building the macOS app. We needed to use a locally patched version instead.
-
-Solution in build_and_sign.sh:
-```bash
-# Copy local modified bambulabs_api package
-cp -r /path/to/modified/bambulabs_api site-packages/
-
-# Build app with local packages
-pyinstaller OTTOMAT3D-x86_64.spec
-```
-
-This ensures the .app bundle uses our patched version rather than the buggy PyPI release.
-
-### Profile System and Bed Movement Types
-
-Different printers move the bed in different directions for ejection:
-- Y-Sling printers (Bambu A1): Move bed via Y-axis (Y200)
-- Z-Bed printers (most others): Move bed via Z-axis (Z200)
-
-The script tracks this per printer profile. Bug during development: switching between profiles with different bed types wasn't updating the movement command. A P1P profile would try to do Y200 movements (wrong), or an A1 profile would try Z200 (also wrong).
-
-The fix ensures bed movement commands are regenerated when switching profiles, not just when initially setting up a printer.
-
-## System Architecture
-
-```
-main.py
-├── setup/
-│   ├── printer_setup.py       # Printer configuration wizard
-│   └── job_setup.py            # Print job queue configuration
-├── operations/
-│   ├── automation.py           # Main automation loop
-│   ├── calibration.py          # Bed movement for ejection alignment
-│   ├── ejection.py             # Eject sequence coordination
-│   └── testing.py              # Connection testing utilities
-├── printers/
-│   ├── printer_factory.py      # Factory pattern for printer instantiation
-│   ├── bambu_printer.py        # Bambu Lab MQTT implementation
-│   ├── prusa_printer.py        # Prusa HTTP API implementation
-│   ├── flashforge_printer.py   # FlashForge HTTP+TCP implementation
-│   ├── creality_printer.py     # Creality WebSocket implementation
-│   ├── elegoo_printer.py       # Elegoo WebSocket implementation
-│   └── anycubic_printer.py     # Anycubic Moonraker implementation
-├── ottoeject/
-│   └── controller.py           # Robot hardware control via HTTP
-├── config/
-│   └── config_manager.py       # Configuration persistence and profile management
-├── utils/
-│   ├── gcode_processor.py      # G-code parsing and modification
-│   ├── rack_manager.py         # Print bed storage slot validation
-│   ├── macro_utils.py          # Klipper macro execution helpers
-│   └── logger.py               # Structured logging with rotation
-└── ui/
-    └── display.py              # CLI menu system and status display
-```
-
-## Key Features
-
-**Multi-Printer Support**: Works with 6 major 3D printer brands out of the box. Each printer integration handles brand-specific quirks (authentication, file transfer, status monitoring).
-
-**Profile Management**: Save multiple printer configurations and switch between them instantly. Supports different printers of the same brand with different setups (e.g., A1 with AMS vs A1 without AMS).
-
-**Queue System**: Configure multiple print jobs in advance. The script will print, eject, store, load fresh plate, and start the next job automatically.
-
-**Rack Validation**: Prevents conflicts by tracking which storage slots are occupied. Won't let you assign two jobs to the same slot or exceed rack capacity.
-
-**Real-Time Monitoring**: Polls printer status continuously during prints. Displays current temperature, progress percentage, time remaining, and error states.
-
-**Automatic Bed Leveling**: For Anycubic printers, injects the full LeviQ leveling sequence before each print to ensure proper bed calibration.
-
-**macOS App Bundle**: Properly signed and notarized .app for macOS. Windows gets a portable executable via PyInstaller.
-
-**Comprehensive Logging**: All operations logged to rotating log files with timestamps, making troubleshooting straightforward.
+This is not a simple script - it's a production-ready application with:
+- Complete printer abstraction layer supporting 6 different communication protocols
+- Self-contained Python runtime distribution (200MB+)
+- Profile management system with persistent configuration
+- Real-time status monitoring and error recovery
+- Advanced features like AMS mapping and dynamic G-code modification
+- Professionally signed and notarized macOS application
+- Automated build and distribution pipeline
 
 ## Development Timeline
 
-**Week 1 (July)**: Core script logic, printer setup wizard, basic automation loop. Implemented support for Bambu, Prusa, Anycubic, Creality, and FlashForge printers.
+### Week 1-2 (Early July 2025): Foundation
+- Built core automation orchestration engine
+- Implemented printer setup wizard and configuration system
+- Integrated 6 printer brands (Bambu Lab, Prusa, FlashForge, Creality, Elegoo, Anycubic)
+- Created rack validation system to prevent storage slot conflicts
+- Developed ejection sequence coordination with robotic hardware
 
-**Week 2 (July)**: Rack validation system to prevent storage conflicts. Ejection sequence implementation for all supported printers.
+**Technical Challenge**: Each printer uses completely different APIs - MQTT with certificates, HTTP with bearer tokens, WebSocket with custom firmware, dual HTTP+TCP connections. Had to design a Factory pattern that abstracts all of this behind a unified interface.
 
-**Week 3 (July)**: Profile management system for saving/loading multiple printer configurations. G-code modification system for Anycubic/Elegoo printers (inject Z-height movement commands).
+### Week 3 (Mid July): Advanced Features
+- Implemented profile management system for multiple printer configurations
+- Built dynamic G-code modification engine for Elegoo/Anycubic printers
+- Solved bed-raising problem: printers have Z-height limits, but ejection robot needs bed raised. Solution: download G-code before each print, inject `G1 Z205 F600` movement command after print completion, re-upload modified file.
 
-**Week 4 (July)**: macOS shell script not working - Gatekeeper blocking Python files. Pivoted to PyInstaller .app bundle approach with custom icon.
+**Technical Breakthrough**: Discovered we could inject G-code commands dynamically. This eliminated the need for users to manually modify every print file.
 
-**Week 1-2 (August)**: Built .app successfully but colleagues couldn't open it ("unidentified developer" errors). Implemented terminal wrapper, then discovered proper solution: code signing with Apple Developer ID.
+### Week 4 (Late July): macOS Distribution Crisis
+Initial approach used shell script wrapper, but macOS Gatekeeper blocked it. Every Python file triggered "unidentified developer" warnings. Having beta testers bypass security warnings for 20+ random files was unprofessional.
 
-**Week 3 (August)**: Created comprehensive build_and_sign.sh script for automated app building, signing, and notarization. Figured out AMS mapping for Bambu Lab multi-material prints after extensive testing.
+**Solution**: Pivoted to PyInstaller to create proper .app bundle with custom icon. This required learning PyInstaller configuration, handling hiddenimports, and bundling the entire Python 3.13 runtime.
 
-**Week 4 (August)**: Implemented FlashForge Material Station support (similar to Bambu AMS). Added LeviQ leveling sequence injection for Anycubic printers.
+### Week 1-2 (Early August): Code Signing Hell
+Built .app successfully, but colleagues couldn't open it. Terminal would flash and close immediately. Spent 2 weeks debugging:
+- Terminal wrapper issues
+- Permissions problems  
+- Gatekeeper blocking without clear error messages
+- Learning about Apple's hardened runtime requirements
 
-**Week 1 (September)**: Bug fixes before beta launch. Fixed Bambu connection test bug (required patching bambulabs_api package). Fixed profile switching bug where bed movement type wasn't updating. Moved macOS config files to proper Application Support directory.
+**Breakthrough**: Discovered the complete workflow requires Developer ID signing + notarization + stapling. Built automated `build_and_sign.sh` pipeline that handles everything.
 
-**Week 2 (September)**: Shipped to beta testers on Windows and macOS.
+### Week 3 (Mid August): AMS Implementation
+Multi-material .3mf files from Bambu Studio wouldn't start printing. Spent a week implementing Bambu Lab's Automatic Material System (AMS) configuration.
+
+Initial approach: tried to get user input for filament colors, material types, and slot mappings. Built color picker UIs, material selection menus. Very complex.
+
+**Major Discovery**: The printer completely ignores the colors and materials sent via the API. It uses whatever filaments are physically loaded in the AMS. The mapping is just a formality to enable multi-material mode. 
+
+This revelation simplified the entire feature from 20+ user inputs down to a single yes/no question: "Does this print use AMS?"
+
+### Week 4 (Late August): Material Station + LeviQ
+- Implemented FlashForge Material Station (similar to Bambu AMS but uses empty material mappings)
+- Added Anycubic LeviQ full bed leveling sequence injection before each print
+- Anycubic printers weren't doing complete leveling via script, had to reverse-engineer the LeviQ sequence
+
+### Week 1 (Early September): Critical Bug Fixes
+Final push before beta testing launch:
+
+**Bug 1 - Bambu Connection Test**: Connection validation was failing. Root cause was in the bambulabs_api package itself. Had to fork and patch the package locally, then modify build_and_sign.sh to use local package instead of PyPI version.
+
+**Bug 2 - Profile Switching**: Y-Sling printers (Bambu A1) move bed via Y-axis. Z-Bed printers (most others) move via Z-axis. Profile switching wasn't updating the movement commands. A P1P profile would try `Y200` movement (wrong), A1 profile would try `Z200` (also wrong). Fixed by regenerating bed movement commands on profile switch.
+
+**Improvement**: Moved macOS config file from app bundle to `~/Library/Application Support/OTTOMAT3D/` (proper macOS convention).
+
+### Week 2 (Mid September): Beta Launch
+Shipped Windows and macOS versions to beta testers.
+
+## Technical Architecture
+
+### Multi-Protocol Printer Abstraction
+
+```python
+# Factory pattern creates appropriate printer instance
+printer = PrinterFactory.create_printer(brand, config)
+
+# Polymorphic interface works across all brands
+printer.connect()
+printer.start_print(filename, use_ams=True)
+status = printer.get_status()
+printer.disconnect()
+```
+
+Behind this simple interface:
+- **Bambu Lab**: MQTT with X.509 certificates, JSON status messages, AMS slot mapping
+- **Prusa**: REST API with bearer tokens, multipart file upload, PrusaLink integration
+- **FlashForge**: Dual connection - HTTP for control + raw TCP socket for file transfer
+- **Creality**: WebSocket with JSON-RPC, requires rooted firmware
+- **Elegoo**: WebSocket with Moonraker API, Rinkhals custom firmware
+- **Anycubic**: Moonraker REST API, Rinkhals firmware, LeviQ leveling injection
+
+### Self-Contained Distribution
+
+Challenge: Beta testers have different Python versions, missing dependencies, corporate firewalls blocking pip.
+
+Solution: Bundle complete Python 3.13 runtime with all dependencies:
+```
+src/_internal/
+├── python-3.13-mac/        # Complete Python interpreter
+│   └── lib/python3.13/
+│       └── site-packages/  # All dependencies pre-installed
+└── python-3.13-windows/    # Windows equivalent
+```
+
+Result: 200MB download that works anywhere. No pip, no virtualenv, no system Python required.
+
+### Dynamic G-code Modification
+
+Elegoo and Anycubic printers have fixed Z-height ceilings. The ejection robot needs bed raised to Z205, but print files are already sliced with max Z180.
+
+```python
+def inject_bed_movement(self, gcode_path):
+    # Download G-code from printer
+    content = self.download_gcode(gcode_path)
+    
+    # Find print end marker
+    lines = content.split('\n')
+    end_index = self._find_print_end(lines)
+    
+    # Inject movement command
+    lines.insert(end_index, "G1 Z205 F600 ; Raise bed for ejection")
+    
+    # Re-upload modified G-code
+    self.upload_gcode(gcode_path, '\n'.join(lines))
+```
+
+For Anycubic, also inject complete LeviQ bed leveling sequence before print start.
+
+### macOS Code Signing Pipeline
+
+```bash
+# build_and_sign.sh automates everything:
+
+# 1. Build .app with PyInstaller
+pyinstaller OTTOMAT3D-x86_64.spec
+
+# 2. Sign with Developer ID
+codesign --deep --force --options runtime \
+    --sign "Developer ID Application: ..." \
+    dist/OTTOMAT3D.app
+
+# 3. Create DMG
+hdiutil create -volname OTTOMAT3D \
+    -srcfolder dist/OTTOMAT3D.app \
+    -ov -format UDZO dist/OTTOMAT3D.dmg
+
+# 4. Submit for Apple notarization
+xcrun notarytool submit dist/OTTOMAT3D.dmg \
+    --wait
+
+# 5. Staple notarization ticket
+xcrun stapler staple dist/OTTOMAT3D.app
+```
+
+Result: Properly signed macOS app that installs without any security warnings.
+
+### AMS (Automatic Material System) Implementation
+
+The breakthrough that simplified everything:
+
+```python
+# What I thought I needed:
+ams_config = {
+    'slots': [
+        {'slot': 0, 'color': user_input_color_1, 'material': user_input_material_1},
+        {'slot': 1, 'color': user_input_color_2, 'material': user_input_material_2},
+        # ... complex user input collection
+    ]
+}
+
+# What actually works:
+ams_config = {
+    'slots': [
+        {'slot': 0, 'color': '808080', 'material': 'PETG'},  # Placeholder
+        {'slot': 1, 'color': '000000', 'material': 'PETG'},  # Printer ignores
+        {'slot': 2, 'color': 'FF0000', 'material': 'PETG'},  # these values
+        {'slot': 3, 'color': '0000FF', 'material': 'PETG'},  # completely
+    ]
+}
+```
+
+The printer uses whatever filaments are physically loaded. The API configuration is just to enable multi-material mode. This reduced the feature from 20+ inputs to one yes/no question.
+
+## Key Features
+
+**Profile System**: Save multiple printer configurations. Switch between different printers or different configurations of the same printer instantly.
+
+**Job Queue**: Configure multiple print jobs in advance. Application handles print → eject → store → load → next job automatically.
+
+**Rack Validation**: Prevents conflicts by tracking storage slot assignments. Won't let you assign two jobs to the same slot.
+
+**Real-Time Monitoring**: Status updates every 10 seconds during prints. Shows temperature, progress, time remaining, error states.
+
+**Error Recovery**: Connection retry logic, timeout handling, graceful degradation if monitoring fails.
+
+**Cross-Platform**: Single codebase works on Windows and macOS with platform-specific builds.
+
+![Job Setup and Rack Validation](docs/screenshots/job_setup_and_rack_validation.png)
+
+## System Requirements
+
+**Windows**:
+- Windows 10 or newer
+- Windows Defender Firewall (or manual configuration for third-party antivirus)
+
+**macOS**:
+- macOS 11 (Big Sur) or newer
+- Administrator access for security bypass
+
+**Network**:
+- All devices (computer, printer, OttoEject) on same local network
+- 2.4GHz frequency recommended
 
 ## Installation
 
-**macOS**: Extract the .zip, open OTTOMAT3D.app. The app is signed and notarized - no security warnings.
+### Windows
+1. Download `ottomat3d-beta-test-win64.zip`
+2. Extract to desired location
+3. Run firewall configuration scripts in `windows_setup/` folder
+4. Double-click `run_ottomat3d.bat`
 
-**Windows**: Extract the .zip, run run_ottomat3d.bat. Windows Defender may require firewall rule approval on first run.
+See [docs/WINDOWS_SETUP.md](docs/WINDOWS_SETUP.md) for detailed instructions.
 
-See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) for complete setup instructions and usage.
+### macOS
+1. Download `ottomat3d-beta-test-macos.zip`
+2. Extract and move to Applications or Desktop
+3. Right-click OTTOMAT3D.app → Open (bypass Gatekeeper)
+4. Go to System Settings → Privacy & Security → Click "Open Anyway"
 
-## Usage Example
+See [docs/MACOS_SETUP.md](docs/MACOS_SETUP.md) for detailed instructions.
 
-```
-OTTOMAT3D AUTOMATION OPTIONS:
-────────────────────────────────────────────────────
-1. Run Last Loop (Same Printer + Same Print Jobs)
-2. Use Existing Printer, Configure New Jobs
-3. Select a Different Printer + New Print Jobs
-4. Setup A New Printer + New Print Jobs
-5. Modify Existing Printer Details
-6. Change OttoEject IP Address
-7. Change OttoRack Slot Count
-8. Test Printer Connection
-9. Test OttoEject Connection
-10. Move Print Bed for Calibration
-```
+## Usage
 
-First-time setup (Option 4):
-1. Select printer brand
-2. Enter IP address
-3. Enter authentication credentials (access code, API key, etc.)
-4. Configure printer-specific settings (macros, bed type, AMS support)
-5. Configure print jobs (filenames, storage slots)
-6. Validate rack state
-7. Run automation
+![Printer Selection](docs/screenshots/printer_selection.png)
 
-The script handles the rest: print, monitor, eject, store, load, repeat.
+First-time setup:
+1. Launch application
+2. Select Option 4: "Setup A New Printer"
+3. Choose printer brand
+4. Enter IP address and authentication details
+5. Configure printer-specific settings (macros, AMS, bed type)
+6. Configure print jobs (filenames, storage slots)
+7. Validate rack state
+8. Run automation
 
-## Repository Structure
+![Profile Selection](docs/screenshots/profile_selection.png)
+
+The application monitors print progress in real-time, coordinates with the ejection robot after each print, and automatically proceeds to the next job in the queue.
+
+![Automation Progress](docs/screenshots/Automation_sequence.jpeg)
+
+## Technical Skills Demonstrated
+
+- **Software Architecture**: Factory pattern, Strategy pattern, Singleton pattern
+- **API Integration**: REST, MQTT, WebSocket, TCP sockets - 6 different protocols
+- **Network Programming**: Certificate-based auth, bearer tokens, connection pooling, retry logic
+- **Cross-Platform Development**: Windows and macOS with platform-specific builds
+- **Build Automation**: PyInstaller, code signing, notarization, DMG creation
+- **CLI Design**: Menu system, real-time updates, input validation, error messages
+- **Configuration Management**: INI-style config files, profile system, validation
+- **Error Handling**: Graceful degradation, retry logic, user-friendly error messages
+- **Testing**: Connection validation, integration testing with hardware
+- **Documentation**: User guides, setup instructions, troubleshooting
+
+## Project Structure
 
 ```
 .
 ├── LICENSE                     # Portfolio demonstration license
 ├── README.md                   # This file
-├── build_and_sign.sh           # macOS app build and signing pipeline
-├── terminal_wrapper.sh         # macOS app terminal wrapper
-├── run_ottomat3d.command       # macOS launch script
-├── docs/
-│   ├── USER_GUIDE.md           # Complete user manual
-│   └── screenshots/            # UI screenshots for documentation
-├── src/                        # Main source code
-│   ├── main.py                 # Entry point
+├── ARCHITECTURE.md             # Deep technical documentation
+├── build_and_sign.sh           # macOS build pipeline (original)
+├── build_and_sign_SANITIZED.sh # Sanitized version for portfolio
+├── src/
+│   ├── main.py                 # Application entry point
 │   ├── config/                 # Configuration management
 │   ├── setup/                  # Setup wizards
 │   ├── operations/             # Automation logic
-│   ├── printers/               # Printer integrations
-│   ├── ottoeject/              # Robot control
-│   ├── utils/                  # Helper utilities
-│   ├── ui/                     # CLI display
-│   ├── gcode/                  # G-code templates
-│   └── requirements.txt        # Python dependencies
+│   ├── printers/               # Printer integrations (6 brands)
+│   ├── ottoeject/              # Robot hardware control
+│   ├── utils/                  # Utilities (G-code, logging, rack management)
+│   ├── ui/                     # CLI interface
+│   └── gcode/                  # G-code templates
+├── docs/
+│   ├── USER_GUIDE.md           # Complete user manual
+│   ├── WINDOWS_SETUP.md        # Windows installation guide
+│   ├── MACOS_SETUP.md          # macOS installation guide
+│   └── screenshots/            # Application screenshots
 └── windows_setup/              # Windows firewall configuration scripts
 ```
 
-## Technical Skills Demonstrated
+## Known Limitations
 
-- **Software Architecture**: Factory pattern, Strategy pattern, polymorphic interfaces
-- **API Integration**: REST, MQTT, WebSocket, TCP sockets
-- **Cross-Platform Development**: Windows and macOS support with platform-specific builds
-- **Build Automation**: PyInstaller, code signing, notarization workflows
-- **Security**: Certificate-based authentication, API key management, code signing
-- **CLI Design**: Intuitive menu system, real-time status updates, error handling
-- **Configuration Management**: Profile system, persistent storage, validation
-- **Network Programming**: Connection pooling, retry logic, timeout handling
-- **Testing**: Connection validation, error simulation, recovery testing
+- Bambu Lab MQTT connections can timeout (handled gracefully with reconnection)
+- Creality printers require rooted firmware for WebSocket access
+- Anycubic/Elegoo printers require Rinkhals custom firmware
+- Windows requires firewall rules for printer communication
+- macOS .app requires security bypass on first launch
 
-## Known Issues
+## Future Enhancements
 
-**Bambu MQTT Timeouts**: Bambu printers occasionally timeout during MQTT operations. This is handled gracefully with automatic reconnection.
+- Web-based UI for remote monitoring
+- Support for additional printer brands
+- Multiple simultaneous printer orchestration
+- Advanced scheduling and queue management
+- Real-time notifications via push/email
+- Cloud storage for print history and analytics
 
-**Creality Firmware Requirement**: Creality K1/K1C printers require rooted firmware for WebSocket access. This is a printer limitation, not a script issue.
+## Repository Notes
 
-**Windows Firewall**: Windows requires firewall rules for printer communication. Included batch scripts automate this setup.
-
-## Contact
+This repository showcases the production application as deployed to beta testers. Personal information has been sanitized from build scripts (Developer ID, paths). The complete source code, build system, and documentation are included for technical review.
 
 For questions about this project, contact Harshil Patel.
 
-This code represents independent work developed for Ottomat3D during summer 2025.
+---
+
+**Development Period**: July - September 2025  
+**Total Conversations**: 88+ over 2 months  
+**Lines of Code**: 5,000+ Python  
+**Beta Testers**: Active testing program  
+**Status**: Production deployment complete
