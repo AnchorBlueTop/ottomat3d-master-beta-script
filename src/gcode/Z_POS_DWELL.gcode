@@ -3,7 +3,7 @@
 ; Removed Thumbnails and gcode to minimise redundancy. 
 
 ; Z_POS_DWELL.gcode for Core One (Z-bed positioning)
-; For OTTOMAT3D automation - moves Z to 200mm and dwells
+; For OTTOMAT3D automation - moves Z to 200mm and dwells 
 
 ; external perimeters extrusion width = 0.45mm
 ; perimeters extrusion width = 0.45mm
