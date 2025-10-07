@@ -2,7 +2,7 @@
 ; Removed Thumbnails and gcode to minimise redundancy. 
 
 ; Y_POS_DWELL.gcode for MK-4 (Y-bed positioning)
-; For OTTOMAT3D automation - moves Y to 210mm and dwells
+; For OTTOMAT3D automation - moves Y to 210mm and dwells 
 
 M73 P0 R1
 M73 C0
