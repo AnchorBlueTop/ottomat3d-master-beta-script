@@ -6,11 +6,11 @@
 
 ## What This Is
 
-OTTOMAT3D is a cross-platform automation application that orchestrates 3D printer control across 6 different manufacturer APIs, coordinating with robotic ejection hardware to enable fully automated multi-job print workflows. This represents 88+ development conversations and approximately 300+ hours of work spanning July through September 2025.
+OTTOMAT3D Master Beta Script is a cross-platform CMD/Terminal application that orchestrates 3D printer control across 6 different manufacturer APIs, coordinating with robotic ejection hardware to enable fully automated multi-job print workflows. I had developed indivudal python scripts beforehand for each printer model earlier, which was then combined into one unviversal 'master' script that contains every functionality. This represents approximately 300+ hours of work spanning June through September 2025.
 
-This is not a simple script - it's a production-ready application with:
+Prominent Features of the Script Application: 
 - Complete printer abstraction layer supporting 6 different communication protocols
-- Self-contained Python runtime distribution (200MB+)
+- Self-contained Python runtime distribution (~24MB)
 - Profile management system with persistent configuration
 - Real-time status monitoring and error recovery
 - Advanced features like AMS mapping and dynamic G-code modification
@@ -26,14 +26,14 @@ This is not a simple script - it's a production-ready application with:
 - Created rack validation system to prevent storage slot conflicts
 - Developed ejection sequence coordination with robotic hardware
 
-**Technical Challenge**: Each printer uses completely different APIs - MQTT with certificates, HTTP with bearer tokens, WebSocket with custom firmware, dual HTTP+TCP connections. Had to design a Factory pattern that abstracts all of this behind a unified interface.
+**Technical Challenge**: Each printer uses completely different APIs - MQTT with certificates, HTTP with bearer tokens, WebSockets requiring custom firmware, dual HTTP+TCP connections. Had to design a Factory pattern that abstracts all of this behind a unified interface.
 
 ### Week 3 (Mid July): Advanced Features
 - Implemented profile management system for multiple printer configurations
 - Built dynamic G-code modification engine for Elegoo/Anycubic printers
-- Solved bed-raising problem: printers have Z-height limits, but ejection robot needs bed raised. Solution: download G-code before each print, inject `G1 Z205 F600` movement command after print completion, re-upload modified file.
-
-**Technical Breakthrough**: Discovered we could inject G-code commands dynamically. This eliminated the need for users to manually modify every print file.
+- Solved bed-raising problem: Print bed must be lowered for the ejection bot to grab hold off the build plate. 
+  Solution: download G-code before each print, inject `G1 Z205 F600` movement command after print completion, re-upload modified file.
+  Some printers we can inject G-code commands dynamically as they home (G28) downwards instead of upwards which we can't do with finished prints on the build plate.
 
 ### Week 4 (Late July): macOS Distribution Crisis
 Initial approach used shell script wrapper, but macOS Gatekeeper blocked it. Every Python file triggered "unidentified developer" warnings. Having beta testers bypass security warnings for 20+ random files was unprofessional.
@@ -46,31 +46,33 @@ Built .app successfully, but colleagues couldn't open it. Terminal would flash a
 - Permissions problems  
 - Gatekeeper blocking without clear error messages
 - Learning about Apple's hardened runtime requirements
+- Even with an Apple Developer License
 
-**Breakthrough**: Discovered the complete workflow requires Developer ID signing + notarization + stapling. Built automated `build_and_sign.sh` pipeline that handles everything.
+**Breakthrough**: Discovered the complete workflow requires Developer ID signing (of every single file) + notarization + stapling. Built automated `build_and_sign.sh` pipeline that handles everything.
 
 ### Week 3 (Mid August): AMS Implementation
 Multi-material .3mf files from Bambu Studio wouldn't start printing. Spent a week implementing Bambu Lab's Automatic Material System (AMS) configuration.
 
-Initial approach: tried to get user input for filament colors, material types, and slot mappings. Built color picker UIs, material selection menus. Very complex.
+Initial approach: tried to get user input for filament colors, material types, and slot mappings, based off online implementation.
 
-**Major Discovery**: The printer completely ignores the colors and materials sent via the API. It uses whatever filaments are physically loaded in the AMS. The mapping is just a formality to enable multi-material mode. 
+**Major Discovery**: The printer requires an 'AMS Mapping Table' to be sent before we call the 'start_print' API. Mapping Table does not require correct filament details for each slot, completely ignores the colors and materials sent via the API. It uses whatever filaments are physically loaded in the AMS. The mapping is just a formality to enable multi-material mode. 
+The gcode file must also have had their filaments 'synced' before being sliced in Bambu Studio. 
 
-This revelation simplified the entire feature from 20+ user inputs down to a single yes/no question: "Does this print use AMS?"
+This revelation simplified the entire feature from 5+ user inputs down to a single yes/no question: "Does this print use AMS?"
 
 ### Week 4 (Late August): Material Station + LeviQ
 - Implemented FlashForge Material Station (similar to Bambu AMS but uses empty material mappings)
-- Added Anycubic LeviQ full bed leveling sequence injection before each print
-- Anycubic printers weren't doing complete leveling via script, had to reverse-engineer the LeviQ sequence
+- Added Anycubic LeviQ full bed leveling sequence injection before each print. 
+- Anycubic printers weren't doing complete leveling via script, had to reverse-engineer the LeviQ sequence 
 
 ### Week 1 (Early September): Critical Bug Fixes
 Final push before beta testing launch:
 
-**Bug 1 - Bambu Connection Test**: Connection validation was failing. Root cause was in the bambulabs_api package itself. Had to fork and patch the package locally, then modify build_and_sign.sh to use local package instead of PyPI version.
+**Bug 1 - Bambu Connection Test**: Connection validation was failing. Root cause was in the bambulabs_api package itself. Had to fork and patch the package locally, then modify build_and_sign.sh to use local package instead of remote PyPI version.
 
-**Bug 2 - Profile Switching**: Y-Sling printers (Bambu A1) move bed via Y-axis. Z-Bed printers (most others) move via Z-axis. Profile switching wasn't updating the movement commands. A P1P profile would try `Y200` movement (wrong), A1 profile would try `Z200` (also wrong). Fixed by regenerating bed movement commands on profile switch.
+**Bug 2 - Profile Switching**: Y-Sling printers (Bambu A1) move bed via Y-axis. Z-Bed printers (most others) move via Z-axis. Profile switching wasn't updating the movement commands. A P1P profile would try `Y200` movement (wrong), A1 profile would try `Z200` (also wrong). Fixed by correctly mapping bed movement commands based on printer type on profile switch.
 
-**Improvement**: Moved macOS config file from app bundle to `~/Library/Application Support/OTTOMAT3D/` (proper macOS convention).
+**Improvement**: Moved macOS config file from app bundle to `~/Library/Application Support/OTTOMAT3D/` (proper macOS convention) as write permission prevented from writing within package contents.
 
 ### Week 2 (Mid September): Beta Launch
 Shipped Windows and macOS versions to beta testers.
@@ -111,7 +113,7 @@ src/_internal/
 └── python-3.13-windows/    # Windows equivalent
 ```
 
-Result: 200MB download that works anywhere. No pip, no virtualenv, no system Python required.
+Result: 24MB zip download that works anywhere. No pip, no virtualenv, no system Python required.
 
 ### Dynamic G-code Modification
 
@@ -187,8 +189,38 @@ ams_config = {
     ]
 }
 ```
+The printer uses whatever filaments are physically loaded. The API configuration is just to enable multi-material mode. This reduced the feature from 5+ inputs to one yes/no question.
 
-The printer uses whatever filaments are physically loaded. The API configuration is just to enable multi-material mode. This reduced the feature from 20+ inputs to one yes/no question.
+```python
+                self.logger.info(" Starting print with AMS mapping...")
+                ams_mapping = [0, 1, 2, 3]  # T0→Slot1, T1→Slot2, T2→Slot3, T3→Slot4
+                
+                try:
+                    response = self.printer_instance.start_print(
+                    filename, "", use_ams=True, ams_mapping=ams_mapping, flow_calibration=True)
+                    self.logger.info(f"✅ AMS print started successfully!")
+                    
+                except TimeoutError:
+                    self.logger.info(" AMS print command sent (timeout on response - normal)")
+                except Exception as e:
+                    self.logger.error(f"❌ AMS print failed: {e}")
+                    return False
+            else:
+                # Single material print
+                self.logger.info(f" Starting single-material print: {filename}")
+                try:
+                    response = self.printer_instance.start_print(
+                    filename, "", use_ams=False)
+                except TimeoutError:
+                    self.logger.info("Print command sent (timeout on response - normal)")
+            
+            # Wait and validate
+            wait_time = self.first_job_wait_seconds if is_first_job else (20 if use_ams else 10)
+            self.logger.info(f" Waiting {wait_time}s for initialization...")
+            time.sleep(wait_time)
+```
+The printer requires an AMS Mapping Table to be send before we call the start the print via API. 
+This was discovered spontanoeously after our Bambu Lab X1-C showed an "AMS Mapping Table Error" message after an hour of hanging. 
 
 ## Key Features
 
@@ -196,7 +228,7 @@ The printer uses whatever filaments are physically loaded. The API configuration
 
 **Job Queue**: Configure multiple print jobs in advance. Application handles print → eject → store → load → next job automatically.
 
-**Rack Validation**: Prevents conflicts by tracking storage slot assignments. Won't let you assign two jobs to the same slot.
+**Rack Validation**: Prevents conflicts by tracking storage slot assignments and simulating entire automation loop. Won't let you assign two jobs to the same slot. 
 
 **Real-Time Monitoring**: Status updates every 10 seconds during prints. Shows temperature, progress, time remaining, error states.
 
@@ -301,19 +333,11 @@ The application monitors print progress in real-time, coordinates with the eject
 ## Known Limitations
 
 - Bambu Lab MQTT connections can timeout (handled gracefully with reconnection)
-- Creality printers require rooted firmware for WebSocket access
-- Anycubic/Elegoo printers require Rinkhals custom firmware
+- Creality printers require root to inject 'G1 Z200 F600' into end of 'END_PRINT' macro. 
+- Anycubic printers require Rinkhals custom firmware
+- Elegoo printers cannot move print bed independetly for calibration without starting an entire print job. 
 - Windows requires firewall rules for printer communication
 - macOS .app requires security bypass on first launch
-
-## Future Enhancements
-
-- Web-based UI for remote monitoring
-- Support for additional printer brands
-- Multiple simultaneous printer orchestration
-- Advanced scheduling and queue management
-- Real-time notifications via push/email
-- Cloud storage for print history and analytics
 
 ## Repository Notes
 
