@@ -40,17 +40,48 @@ Initial approach used shell script wrapper, but macOS Gatekeeper blocked it. Eve
 
 **Solution**: Pivoted to PyInstaller to create proper .app bundle with custom icon. This required learning PyInstaller configuration, handling hiddenimports, and bundling the entire Python 3.13 runtime.
 
-### Week 1-2 (Early August): Code Signing Hell
-Built .app successfully, but colleagues couldn't open it. Terminal would flash and close immediately. Spent 2 weeks debugging:
-- Terminal wrapper issues
-- Permissions problems  
-- Gatekeeper blocking without clear error messages
-- Learning about Apple's hardened runtime requirements
-- Even with an Apple Developer License
+Week 4 (Late July): macOS Distribution Crisis
+Initial approach used shell script wrapper, but macOS Gatekeeper blocked it. Every Python file triggered "unidentified developer" warnings. Having beta testers bypass security warnings for 20+ random files was unprofessional.
 
-**Breakthrough**: Discovered the complete workflow requires Developer ID signing (of every single file) + notarization + stapling. Built automated `build_and_sign.sh` pipeline that handles everything.
+Solution: Pivoted to PyInstaller to create proper .app bundle with custom icon. This required learning PyInstaller configuration, handling hiddenimports, and bundling the entire Python 3.13 runtime.
 
-### Week 3 (Mid August): AMS Implementation
+New Problem: Built .app on M-series MacBook (ARM64). Only worked on Apple Silicon Macs. Intel Mac users couldn't run it at all.
+
+## Week 5-6 (Early August): Code Signing Hell & Cross-Architecture Nightmare
+Built .app successfully, but colleagues couldn't open it. Terminal would flash and close immediately. Spent 2 weeks debugging multiple issues simultaneously:
+Architecture Problem: PyInstaller on Apple Silicon builds ARM64-only binaries. Beta testers had Intel Macs, M1 Macs, M2 Macs - complete mix. The ARM64 .app wouldn't even launch on Intel Macs. Even among Apple Silicon Macs, builds on M1 Max didn't work reliably on M2.
+Solution Path:
+
+Researched Rosetta 2 as compatibility layer for running x86_64 on Apple Silicon
+Attempted separate builds for ARM64 and x86_64 (maintaining two build pipelines)
+Discovered architecture-specific Python packages (websockets, Pillow) caused issues
+Architecture-specific .so files (compiled C extensions) wouldn't work cross-architecture
+
+Final Solution: Universal build approach using Rosetta 2 compatibility. Modified build_and_sign.sh to:
+
+Backup ARM64-specific packages (websockets, Pillow with ARM binaries)
+Download x86_64 versions of architecture-specific packages
+Verify binaries are actually x86_64 (not ARM64 disguised)
+Build .app with x86_64 packages
+Restore ARM64 packages after build (keep dev environment clean)
+Result: x86_64 .app that runs via Rosetta 2 on Apple Silicon, natively on Intel Macs
+
+Code Signing Issues (parallel to architecture work):
+
+Terminal wrapper permission problems
+Gatekeeper blocking without clear error messages
+Learning about Apple's hardened runtime requirements
+Even with Apple Developer ID, apps were blocked
+
+Breakthrough: Complete workflow requires Developer ID signing of every component + notarization + ticket stapling. Built automated build_and_sign.sh pipeline handling:
+
+Cross-architecture package swapping
+Component-level code signing (executables, wrappers, bundles)
+Notarization submission and monitoring
+Automatic ticket stapling
+Build verification on both architectures
+
+### Week 7 (Mid August): AMS Implementation
 Multi-material .3mf files from Bambu Studio wouldn't start printing. Spent a week implementing Bambu Lab's Automatic Material System (AMS) configuration.
 
 Initial approach: tried to get user input for filament colors, material types, and slot mappings, based off online implementation.
@@ -60,21 +91,21 @@ The gcode file must also have had their filaments 'synced' before being sliced i
 
 This revelation simplified the entire feature from 5+ user inputs down to a single yes/no question: "Does this print use AMS?"
 
-### Week 4 (Late August): Material Station + LeviQ
+### Week 8 (Late August): Material Station + LeviQ
 - Implemented FlashForge Material Station (similar to Bambu AMS but uses empty material mappings)
 - Added Anycubic LeviQ full bed leveling sequence injection before each print. 
 - Anycubic printers weren't doing complete leveling via script, had to reverse-engineer the LeviQ sequence 
 
-### Week 1 (Early September): Critical Bug Fixes
+### Week 9 (Early September): Critical Bug Fixes
 Final push before beta testing launch:
 
 **Bug 1 - Bambu Connection Test**: Connection validation was failing. Root cause was in the bambulabs_api package itself. Had to fork and patch the package locally, then modify build_and_sign.sh to use local package instead of remote PyPI version.
 
 **Bug 2 - Profile Switching**: Y-Sling printers (Bambu A1) move bed via Y-axis. Z-Bed printers (most others) move via Z-axis. Profile switching wasn't updating the movement commands. A P1P profile would try `Y200` movement (wrong), A1 profile would try `Z200` (also wrong). Fixed by correctly mapping bed movement commands based on printer type on profile switch.
 
-**Improvement**: Moved macOS config file from app bundle to `~/Library/Application Support/OTTOMAT3D/` (proper macOS convention) as write permission prevented from writing within package contents.
+**Improvement**: Moved macOS config file from app bundle to `~/Library/Application Support/OTTOMAT3D/` (proper macOS convention) as write permissions prevented from writing within package contents.
 
-### Week 2 (Mid September): Beta Launch
+### Week 10 (Mid September): Beta Launch
 Shipped Windows and macOS versions to beta testers.
 
 ## Technical Architecture
