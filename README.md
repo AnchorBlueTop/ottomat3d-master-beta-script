@@ -85,6 +85,33 @@ The application monitors print progress in real-time, coordinates with the eject
 
 ![Automation Progress](docs/screenshots/Automation_sequence.jpeg)
 
+## Project Structure
+
+```
+.
+├── LICENSE                     # Portfolio demonstration license
+├── README.md                   # This file
+├── ARCHITECTURE.md             # Deep technical documentation
+├── build_and_sign.sh           # macOS build pipeline (original)
+├── build_and_sign_SANITIZED.sh # Sanitized version for portfolio
+├── src/
+│   ├── main.py                 # Application entry point
+│   ├── config/                 # Configuration management
+│   ├── setup/                  # Setup wizards
+│   ├── operations/             # Automation logic
+│   ├── printers/               # Printer integrations (6 brands)
+│   ├── ottoeject/              # Robot hardware control
+│   ├── utils/                  # Utilities (G-code, logging, rack management)
+│   ├── ui/                     # CLI interface
+│   └── gcode/                  # G-code templates
+├── docs/
+│   ├── USER_GUIDE.md           # Complete user manual
+│   ├── WINDOWS_SETUP.md        # Windows installation guide
+│   ├── MACOS_SETUP.md          # macOS installation guide
+│   └── screenshots/            # Application screenshots
+└── windows_setup/              # Windows firewall configuration scripts
+```
+
 ## Development Timeline
 
 ### Week 1-2 (Early July 2025): Foundation
@@ -333,33 +360,6 @@ This was discovered spontanoeously after our Bambu Lab X1-C showed an "AMS Mappi
 - **Error Handling**: Graceful degradation, retry logic, user-friendly error messages
 - **Testing**: Connection validation, integration testing with hardware
 - **Documentation**: User guides, setup instructions, troubleshooting
-
-## Project Structure
-
-```
-.
-├── LICENSE                     # Portfolio demonstration license
-├── README.md                   # This file
-├── ARCHITECTURE.md             # Deep technical documentation
-├── build_and_sign.sh           # macOS build pipeline (original)
-├── build_and_sign_SANITIZED.sh # Sanitized version for portfolio
-├── src/
-│   ├── main.py                 # Application entry point
-│   ├── config/                 # Configuration management
-│   ├── setup/                  # Setup wizards
-│   ├── operations/             # Automation logic
-│   ├── printers/               # Printer integrations (6 brands)
-│   ├── ottoeject/              # Robot hardware control
-│   ├── utils/                  # Utilities (G-code, logging, rack management)
-│   ├── ui/                     # CLI interface
-│   └── gcode/                  # G-code templates
-├── docs/
-│   ├── USER_GUIDE.md           # Complete user manual
-│   ├── WINDOWS_SETUP.md        # Windows installation guide
-│   ├── MACOS_SETUP.md          # macOS installation guide
-│   └── screenshots/            # Application screenshots
-└── windows_setup/              # Windows firewall configuration scripts
-```
 
 ## Known Limitations
 
