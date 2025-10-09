@@ -17,6 +17,74 @@ Prominent Features of the Script Application:
 - Professionally signed and notarized macOS application
 - Automated build and distribution pipeline
 
+## Key Features
+
+**Profile System**: Save multiple printer configurations. Switch between different printers or different configurations of the same printer instantly.
+
+**Job Queue**: Configure multiple print jobs in advance. Application handles print → eject → store → load → next job automatically.
+
+**Rack Validation**: Prevents conflicts by tracking storage slot assignments and simulating entire automation loop. Won't let you assign two jobs to the same slot. 
+
+**Real-Time Monitoring**: Status updates every 10 seconds during prints. Shows temperature, progress, time remaining, error states.
+
+**Error Recovery**: Connection retry logic, timeout handling, graceful degradation if monitoring fails.
+
+**Cross-Platform**: Single codebase works on Windows and macOS with platform-specific builds.
+
+![Job Setup and Rack Validation](docs/screenshots/job_setup_and_rack_validation.png)
+
+## System Requirements
+
+**Windows**:
+- Windows 10 or newer
+- Windows Defender Firewall (or manual configuration for third-party antivirus)
+
+**macOS**:
+- macOS 11 (Big Sur) or newer
+- Administrator access for security bypass
+
+**Network**:
+- All devices (computer, printer, OttoEject) on same local network
+- 2.4GHz frequency recommended
+
+## Installation
+
+### Windows
+1. Download `ottomat3d-beta-test-win64.zip`
+2. Extract to desired location
+3. Run firewall configuration scripts in `windows_setup/` folder
+4. Double-click `run_ottomat3d.bat`
+
+See [docs/WINDOWS_SETUP.md](docs/WINDOWS_SETUP.md) for detailed instructions.
+
+### macOS
+1. Download `ottomat3d-beta-test-macos.zip`
+2. Extract and move to Applications or Desktop
+3. Right-click OTTOMAT3D.app → Open (bypass Gatekeeper)
+4. Go to System Settings → Privacy & Security → Click "Open Anyway"
+
+See [docs/MACOS_SETUP.md](docs/MACOS_SETUP.md) for detailed instructions.
+
+## Usage
+
+![Printer Selection](docs/screenshots/printer_selection.png)
+
+First-time setup:
+1. Launch application
+2. Select Option 4: "Setup A New Printer"
+3. Choose printer brand
+4. Enter IP address and authentication details
+5. Configure printer-specific settings (macros, AMS, bed type)
+6. Configure print jobs (filenames, storage slots)
+7. Validate rack state
+8. Run automation
+
+![Profile Selection](docs/screenshots/profile_selection.png)
+
+The application monitors print progress in real-time, coordinates with the ejection robot after each print, and automatically proceeds to the next job in the queue.
+
+![Automation Progress](docs/screenshots/Automation_sequence.jpeg)
+
 ## Development Timeline
 
 ### Week 1-2 (Early July 2025): Foundation
@@ -252,74 +320,6 @@ The printer uses whatever filaments are physically loaded. The API configuration
 ```
 The printer requires an AMS Mapping Table to be send before we call the start the print via API. 
 This was discovered spontanoeously after our Bambu Lab X1-C showed an "AMS Mapping Table Error" message after an hour of hanging. 
-
-## Key Features
-
-**Profile System**: Save multiple printer configurations. Switch between different printers or different configurations of the same printer instantly.
-
-**Job Queue**: Configure multiple print jobs in advance. Application handles print → eject → store → load → next job automatically.
-
-**Rack Validation**: Prevents conflicts by tracking storage slot assignments and simulating entire automation loop. Won't let you assign two jobs to the same slot. 
-
-**Real-Time Monitoring**: Status updates every 10 seconds during prints. Shows temperature, progress, time remaining, error states.
-
-**Error Recovery**: Connection retry logic, timeout handling, graceful degradation if monitoring fails.
-
-**Cross-Platform**: Single codebase works on Windows and macOS with platform-specific builds.
-
-![Job Setup and Rack Validation](docs/screenshots/job_setup_and_rack_validation.png)
-
-## System Requirements
-
-**Windows**:
-- Windows 10 or newer
-- Windows Defender Firewall (or manual configuration for third-party antivirus)
-
-**macOS**:
-- macOS 11 (Big Sur) or newer
-- Administrator access for security bypass
-
-**Network**:
-- All devices (computer, printer, OttoEject) on same local network
-- 2.4GHz frequency recommended
-
-## Installation
-
-### Windows
-1. Download `ottomat3d-beta-test-win64.zip`
-2. Extract to desired location
-3. Run firewall configuration scripts in `windows_setup/` folder
-4. Double-click `run_ottomat3d.bat`
-
-See [docs/WINDOWS_SETUP.md](docs/WINDOWS_SETUP.md) for detailed instructions.
-
-### macOS
-1. Download `ottomat3d-beta-test-macos.zip`
-2. Extract and move to Applications or Desktop
-3. Right-click OTTOMAT3D.app → Open (bypass Gatekeeper)
-4. Go to System Settings → Privacy & Security → Click "Open Anyway"
-
-See [docs/MACOS_SETUP.md](docs/MACOS_SETUP.md) for detailed instructions.
-
-## Usage
-
-![Printer Selection](docs/screenshots/printer_selection.png)
-
-First-time setup:
-1. Launch application
-2. Select Option 4: "Setup A New Printer"
-3. Choose printer brand
-4. Enter IP address and authentication details
-5. Configure printer-specific settings (macros, AMS, bed type)
-6. Configure print jobs (filenames, storage slots)
-7. Validate rack state
-8. Run automation
-
-![Profile Selection](docs/screenshots/profile_selection.png)
-
-The application monitors print progress in real-time, coordinates with the ejection robot after each print, and automatically proceeds to the next job in the queue.
-
-![Automation Progress](docs/screenshots/Automation_sequence.jpeg)
 
 ## Technical Skills Demonstrated
 
