@@ -1,6 +1,6 @@
 # OTTOMAT3D Master Automation Application
 
-**Independent Development**: I designed and built this entire automation application from the ground up over a 2-month period for Ottomat3D's beta testing program. Every component - architecture, API integrations, build pipeline, and distribution system - was developed independently.
+I designed and built this entire automation application over a 10 week period for Ottomat3D's beta testing program. Every component - architecture, API integrations, build pipeline, and distribution system - was developed independently.
 
 ![Main Menu](docs/screenshots/main_menu.png)
 
